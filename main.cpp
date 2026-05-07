@@ -5,6 +5,7 @@
 #include <iostream>
 #include <vector>
 #include <set>
+#include <string>
 using namespace std;
 
 void print_usage() {
@@ -65,10 +66,12 @@ int main(int argc, char* argv[]) {
     exit(1);
   }
 
-  /* read all memory addresses */
+  /* read all memory addresses (supports both decimal and hex with 0x prefix) */
   vector<unsigned long> addresses;
-  unsigned long addr;
-  while (input >> addr) {
+  string line;
+  while (getline(input, line)) {
+    if (line.empty()) continue;
+    unsigned long addr = strtoul(line.c_str(), nullptr, 0);
     addresses.push_back(addr);
   }
   input.close();
@@ -93,40 +96,34 @@ int main(int argc, char* argv[]) {
   Cache* fa_cache = nullptr;
   set<unsigned long> seen_blocks;
   if (classify) {
-    // Fully-associative = num_sets is 1, assoc = num_entries
     fa_cache = new Cache(entries, entries, block_size);
   }
 
-  /* open output file */
-  ofstream output;
-  output.open("cache_sim_output");
-
-  /* simulate each memory reference */
+  /* simulate each memory reference — output to stdout */
   for (int i = 0; i < (int)addresses.size(); i++) {
     unsigned long a = addresses[i];
     bool l1_hit = L1.hit(a);
 
     if (l1_hit) {
       // L1 HIT
-      output << a << " : HIT";
+      cout << a << " : HIT";
       L1.update(a);
       if (use_l2) {
-        // Also update L2 on L1 hit (inclusive policy)
         L2->update(a);
       }
     } else {
       // L1 MISS
-      output << a << " : MISS";
+      cout << a << " : MISS";
 
       // Classify the miss if enabled
       if (classify) {
         unsigned long block_addr = L1.get_block_addr(a);
         if (seen_blocks.find(block_addr) == seen_blocks.end()) {
-          output << " (COMPULSORY)";
+          cout << " (COMPULSORY)";
         } else if (!fa_cache->hit(a)) {
-          output << " (CAPACITY)";
+          cout << " (CAPACITY)";
         } else {
-          output << " (CONFLICT)";
+          cout << " (CONFLICT)";
         }
       }
 
@@ -136,15 +133,15 @@ int main(int argc, char* argv[]) {
       if (use_l2) {
         bool l2_hit = L2->hit(a);
         if (l2_hit) {
-          output << " L2:HIT";
+          cout << " L2:HIT";
         } else {
-          output << " L2:MISS";
+          cout << " L2:MISS";
         }
         L2->update(a);
       }
     }
 
-    output << endl;
+    cout << endl;
 
     // Track seen blocks for compulsory detection
     if (classify) {
@@ -154,13 +151,9 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  output.close();
-
   /* cleanup */
   if (L2) delete L2;
   if (fa_cache) delete fa_cache;
-
-  cout << "Simulation complete. Results written to cache_sim_output" << endl;
 
   return 0;
 }
