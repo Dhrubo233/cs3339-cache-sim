@@ -5,6 +5,7 @@
 #include <iostream>
 #include <vector>
 #include <set>
+#include <sstream>
 #include <string>
 using namespace std;
 
@@ -48,7 +49,7 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  /* print config */
+  /* print config to stdout (informational only) */
   cout << "=== Cache Simulator Configuration ===" << endl;
   cout << "L1 Entries: " << entries << ", Associativity: " << assoc
        << ", Block Size: " << block_size << endl;
@@ -66,13 +67,18 @@ int main(int argc, char* argv[]) {
     exit(1);
   }
 
-  /* read all memory addresses (supports both decimal and hex with 0x prefix) */
+  /* read all memory addresses — supports space-separated and/or newline-separated,
+     and both decimal and hex (0x prefix) */
   vector<unsigned long> addresses;
   string line;
   while (getline(input, line)) {
     if (line.empty()) continue;
-    unsigned long addr = strtoul(line.c_str(), nullptr, 0);
-    addresses.push_back(addr);
+    istringstream iss(line);
+    string token;
+    while (iss >> token) {
+      unsigned long addr = strtoul(token.c_str(), nullptr, 0);
+      addresses.push_back(addr);
+    }
   }
   input.close();
 
@@ -99,31 +105,38 @@ int main(int argc, char* argv[]) {
     fa_cache = new Cache(entries, entries, block_size);
   }
 
-  /* simulate each memory reference — output to stdout */
+  /* open output file */
+  ofstream outfile("cache_sim_output");
+  if (!outfile.is_open()) {
+    cerr << "Could not open output file cache_sim_output. Exiting ..." << endl;
+    exit(1);
+  }
+
+  /* simulate each memory reference — write results to cache_sim_output */
   for (int i = 0; i < (int)addresses.size(); i++) {
     unsigned long a = addresses[i];
     bool l1_hit = L1.hit(a);
 
     if (l1_hit) {
       // L1 HIT
-      cout << a << " : HIT";
+      outfile << a << " : HIT";
       L1.update(a);
       if (use_l2) {
         L2->update(a);
       }
     } else {
       // L1 MISS
-      cout << a << " : MISS";
+      outfile << a << " : MISS";
 
       // Classify the miss if enabled
       if (classify) {
         unsigned long block_addr = L1.get_block_addr(a);
         if (seen_blocks.find(block_addr) == seen_blocks.end()) {
-          cout << " (COMPULSORY)";
+          outfile << " (COMPULSORY)";
         } else if (!fa_cache->hit(a)) {
-          cout << " (CAPACITY)";
+          outfile << " (CAPACITY)";
         } else {
-          cout << " (CONFLICT)";
+          outfile << " (CONFLICT)";
         }
       }
 
@@ -133,15 +146,15 @@ int main(int argc, char* argv[]) {
       if (use_l2) {
         bool l2_hit = L2->hit(a);
         if (l2_hit) {
-          cout << " L2:HIT";
+          outfile << " L2:HIT";
         } else {
-          cout << " L2:MISS";
+          outfile << " L2:MISS";
         }
         L2->update(a);
       }
     }
 
-    cout << endl;
+    outfile << endl;
 
     // Track seen blocks for compulsory detection
     if (classify) {
@@ -150,6 +163,9 @@ int main(int argc, char* argv[]) {
       fa_cache->update(a);
     }
   }
+
+  outfile.close();
+  cout << "Output written to cache_sim_output" << endl;
 
   /* cleanup */
   if (L2) delete L2;
